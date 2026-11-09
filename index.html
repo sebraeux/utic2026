@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#07101f" />
+    <meta name="description" content="Retrospectiva UTIC Sebrae 2026: tecnologia que conecta, protege e impulsiona resultados." />
+    <title>UTIC Sebrae — Retrospectiva 2026</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Figtree:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+    <script src="script.js" defer></script>
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="#inicio" aria-label="UTIC Sebrae, início">
+        <img src="img/logo-v-w.svg" alt="UTIC Sebrae" />
+      </a>
+      <nav class="desktop-nav" aria-label="Navegação principal">
+        <a href="#resultados">Resultados</a>
+        <a href="#jornada">Jornada 2026</a>
+        <a href="#futuro">Próximos passos</a>
+      </nav>
+      <a class="header-cta" href="#jornada">Ver entregas <span aria-hidden="true">↘</span></a>
+      <button class="menu-toggle" aria-label="Abrir menu" aria-expanded="false"><span></span><span></span></button>
+    </header>
+
+    <main>
+      <section class="hero" id="inicio" aria-labelledby="hero-title">
+        <div class="hero-sticky">
+          <video class="hero-video" muted playsinline preload="auto" aria-hidden="true" poster="">
+            <source src="videos/engine-team.mp4" type="video/mp4" />
+          </video>
+          <div class="hero-scrim"></div>
+          <div class="hero-grid" aria-hidden="true"></div>
+          <div class="hero-content wrap">
+            <p class="eyebrow"><span class="status-dot"></span> RETROSPECTIVA UTIC <b>·</b> 2026</p>
+            <h1 id="hero-title">Tecnologia que<br /><em>move o Sebrae.</em></h1>
+            <p class="hero-intro">Um ano de entregas que conectam pessoas, protegem dados e transformam a forma de fazer acontecer.</p>
+            <div class="hero-footnote"><span class="scroll-line"></span><span role="status">Role para acompanhar a jornada</span></div>
+          </div>
+          <div class="hero-index"><span>01</span><span class="index-rule"></span><span>09</span></div>
+          <div class="hero-caption">INOVAÇÃO · SEGURANÇA · SERVIÇO</div>
+        </div>
+      </section>
+
+      <section class="overview section-pad" id="resultados">
+        <video class="section-video overview-video" muted playsinline autoplay loop preload="metadata" aria-hidden="true">
+          <source src="videos/5200-183786525.mp4" type="video/mp4" />
+        </video>
+        <div class="section-video-overlay overview-overlay" aria-hidden="true"></div>
+        <div class="wrap">
+          <div class="section-kicker"><span>01 / PANORAMA</span><span class="kicker-rule"></span><span>UM ANO EM MOVIMENTO</span></div>
+          <div class="overview-heading">
+            <div><h2>Grandes desafios.<br /><span>Entregas que fazem diferença.</span></h2>
+              <p class="section-lede">Cada iniciativa é parte de uma jornada coletiva para tornar o Sebrae mais conectado, seguro e preparado para o futuro.</p></div>
+            <div class="overview-note"><span class="note-mark">↗</span><p>Uma retrospectiva<br />feita por muitas mãos.</p></div>
+          </div>
+          <div class="stats-grid">
+            <article class="stat"><strong>41</strong><span>entregas em destaque</span><small>catalogadas ao longo de 2026</small></article>
+            <article class="stat"><strong>09</strong><span>ciclos de entrega</span><small>de janeiro a dezembro</small></article>
+            <article class="stat"><strong>01</strong><span>time em movimento</span><small>conectando todo o Sistema Sebrae</small></article>
+          </div>
+          <p class="demo-note"><span aria-hidden="true">✳</span> Prévia demonstrativa · conteúdo baseado nas entregas de 2026</p>
+        </div>
+      </section>
+
+      <section class="journey section-pad" id="jornada">
+        <div class="journey-video-stage" aria-hidden="true">
+          <video class="journey-video" muted playsinline preload="auto">
+            <source src="videos/months-scroll.mp4" type="video/mp4" />
+          </video>
+          <div class="journey-video-overlay"></div>
+        </div>
+        <div class="wrap journey-top">
+          <div class="section-kicker"><span>02 / LINHA DO TEMPO</span><span class="kicker-rule"></span><span>2026</span></div>
+          <div class="journey-heading"><div><h2>Um ano de evolução,<br /><span>entrega após entrega.</span></h2><p class="section-lede">Deslize para explorar os projetos que marcaram cada etapa da jornada.</p></div>
+          </div>
+        </div>
+        <div class="timeline" aria-label="Entregas organizadas por período">
+          <div class="timeline-track" id="timeline-track"></div>
+        </div>
+        <div class="wrap timeline-hint"><span class="drag-icon" aria-hidden="true">↔</span> DESLIZE PARA EXPLORAR <span class="hint-line"></span><span>2026</span></div>
+      </section>
+
+      <section class="future section-pad" id="futuro">
+        <div class="future-video-stack" aria-hidden="true">
+          <video class="future-video is-active" muted playsinline preload="metadata">
+            <source src="videos/55389-500762756.mp4" type="video/mp4" />
+          </video>
+          <video class="future-video" muted playsinline preload="metadata">
+            <source src="videos/55389-500762756.mp4" type="video/mp4" />
+          </video>
+        </div>
+        <div class="future-video-overlay" aria-hidden="true"></div>
+        <div class="future-glow" aria-hidden="true"></div>
+        <div class="wrap future-inner">
+          <div class="section-kicker"><span>03 / O QUE VEM PELA FRENTE</span><span class="kicker-rule"></span><span>PLANO DIRETOR DE TECNOLOGIA</span></div>
+          <div class="future-copy">
+            <p class="eyebrow"><span class="status-dot"></span> CONSTRUINDO O PRÓXIMO CAPÍTULO</p>
+            <h2>O futuro também<br />é uma <em>entrega.</em></h2>
+            <p>Seguimos conectando estratégia, pessoas e tecnologia para ampliar o impacto do Sebrae em todo o Brasil.</p>
+            <a class="button button-light" href="#inicio">Revisitar a jornada <span aria-hidden="true">↑</span></a>
+          </div>
+          <div class="future-quote"><span class="quote-mark">“</span><blockquote>Nenhum navio cruza o oceano com um só marinheiro.</blockquote><span class="quote-credit">— UMA JORNADA FEITA EM EQUIPE</span></div>
+          <div class="future-orbit orbit-one"></div><div class="future-orbit orbit-two"></div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="wrap footer-inner">
+        <a class="brand" href="#inicio" aria-label="UTIC Sebrae, voltar ao início"><img src="img/logo-v-w.svg" alt="UTIC Sebrae" /></a>
+        <p>Retrospectiva de entregas · 2026</p>
+        <a href="#inicio" class="back-top">Voltar ao topo <span aria-hidden="true">↑</span></a>
+      </div>
+      <div class="wrap footer-bottom"><span>TECNOLOGIA A SERVIÇO DE QUEM EMPREENDE</span><span>BRASIL · 2026</span></div>
+    </footer>
+  </body>
+</html>
