@@ -160,7 +160,7 @@ document.querySelectorAll(".desktop-nav a").forEach((link) => link.addEventListe
 }));
 
 // Keep scroll-linked videos paused and ease their playheads toward the scroll position.
-function bindScrollSyncedVideo(section, video, { smoothingMs = 115, maxSeekStep = 0.14, minSeekInterval = 32 } = {}) {
+function bindScrollSyncedVideo(section, video, { smoothingMs = 115, maxSeekStep = 0.14, minSeekInterval = 32, directScrub = false } = {}) {
   let targetTime = 0;
   let frame = 0;
   let previousFrameTime = 0;
@@ -191,7 +191,21 @@ function bindScrollSyncedVideo(section, video, { smoothingMs = 115, maxSeekStep 
     previousFrameTime = now;
     const difference = targetTime - video.currentTime;
     if (Math.abs(difference) < 0.025) {
-      if (Math.abs(difference) > 0.002) video.currentTime = targetTime;
+      if (Math.abs(difference) > 0.002 && (!directScrub || now - previousSeekTime >= minSeekInterval)) {
+        video.currentTime = targetTime;
+        previousSeekTime = now;
+      }
+      frame = 0;
+      return;
+    }
+
+    if (directScrub) {
+      if (now - previousSeekTime < minSeekInterval) {
+        frame = requestAnimationFrame(easePlayhead);
+        return;
+      }
+      video.currentTime = targetTime;
+      previousSeekTime = now;
       frame = 0;
       return;
     }
@@ -218,7 +232,7 @@ function bindScrollSyncedVideo(section, video, { smoothingMs = 115, maxSeekStep 
 
 const coarsePointer = window.matchMedia("(pointer: coarse)").matches;
 bindScrollSyncedVideo(document.querySelector(".hero"), document.querySelector(".hero-video"), coarsePointer
-  ? { smoothingMs: 100, maxSeekStep: 0.28, minSeekInterval: 56 }
+  ? { directScrub: true, minSeekInterval: 80 }
   : undefined);
 bindScrollSyncedVideo(document.querySelector(".journey"), document.querySelector(".journey-video"), {
   smoothingMs: 135,
