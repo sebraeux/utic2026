@@ -160,15 +160,17 @@ document.querySelectorAll(".desktop-nav a").forEach((link) => link.addEventListe
 }));
 
 // Keep scroll-linked videos paused and ease their playheads toward the scroll position.
-function bindScrollSyncedVideo(section, video, { smoothingMs = 115, maxSeekStep = 0.14 } = {}) {
+function bindScrollSyncedVideo(section, video, { smoothingMs = 115, maxSeekStep = 0.14, minSeekInterval = 32 } = {}) {
   let targetTime = 0;
   let frame = 0;
   let previousFrameTime = 0;
   let previousSeekTime = 0;
+  const stickyLayer = section.querySelector(".hero-sticky, .journey-video-stage");
 
   const updateTarget = () => {
     const bounds = section.getBoundingClientRect();
-    const travel = Math.max(1, section.offsetHeight - window.innerHeight);
+    const pinnedHeight = stickyLayer?.offsetHeight || document.documentElement.clientHeight;
+    const travel = Math.max(1, section.offsetHeight - pinnedHeight);
     const progress = Math.min(1, Math.max(0, -bounds.top / travel));
     if (!Number.isFinite(video.duration) || video.duration === 0) return;
     targetTime = progress * Math.max(0, video.duration - 0.08);
@@ -181,7 +183,7 @@ function bindScrollSyncedVideo(section, video, { smoothingMs = 115, maxSeekStep 
       return;
     }
     if (video.seeking) {
-      frame = requestAnimationFrame(easePlayhead);
+      frame = 0;
       return;
     }
 
@@ -194,7 +196,7 @@ function bindScrollSyncedVideo(section, video, { smoothingMs = 115, maxSeekStep 
       return;
     }
 
-    if (now - previousSeekTime >= 32) {
+    if (now - previousSeekTime >= minSeekInterval) {
       const smoothing = 1 - Math.exp(-elapsed / smoothingMs);
       const easedStep = Math.max(-maxSeekStep, Math.min(maxSeekStep, difference * smoothing));
       video.currentTime += easedStep;
@@ -204,13 +206,20 @@ function bindScrollSyncedVideo(section, video, { smoothingMs = 115, maxSeekStep 
   };
 
   video.addEventListener("loadedmetadata", updateTarget);
+  video.addEventListener("seeked", () => {
+    if (!frame && Math.abs(targetTime - video.currentTime) > 0.025) frame = requestAnimationFrame(easePlayhead);
+  });
   window.addEventListener("scroll", updateTarget, { passive: true });
   window.addEventListener("resize", updateTarget);
+  window.visualViewport?.addEventListener("resize", updateTarget, { passive: true });
   video.pause();
   updateTarget();
 }
 
-bindScrollSyncedVideo(document.querySelector(".hero"), document.querySelector(".hero-video"));
+const coarsePointer = window.matchMedia("(pointer: coarse)").matches;
+bindScrollSyncedVideo(document.querySelector(".hero"), document.querySelector(".hero-video"), coarsePointer
+  ? { smoothingMs: 100, maxSeekStep: 0.28, minSeekInterval: 56 }
+  : undefined);
 bindScrollSyncedVideo(document.querySelector(".journey"), document.querySelector(".journey-video"), {
   smoothingMs: 135,
   maxSeekStep: 0.12,
