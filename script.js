@@ -365,3 +365,35 @@ if (!reducedMotion.matches && "IntersectionObserver" in window) {
   }, { threshold: 0.12 });
   futureObserver.observe(document.querySelector(".future"));
 }
+
+if (!reducedMotion.matches && "IntersectionObserver" in window) {
+  const revealGroups = [
+    ".site-header .brand, .desktop-nav a, .header-cta",
+    ".hero .hero-content > *, .hero-index, .hero-caption",
+    ".overview .section-kicker, .overview-heading, .stat, .demo-note",
+    ".journey-top > .section-kicker, .journey-heading, .period-heading, .delivery-card, .timeline-hint",
+    ".future .section-kicker, .future-copy, .future-quote",
+    ".footer-inner > *, .footer-bottom",
+  ];
+  const revealTargets = new Set();
+
+  revealGroups.forEach((selector) => {
+    document.querySelectorAll(selector).forEach((element, index) => {
+      if (revealTargets.has(element)) return;
+      revealTargets.add(element);
+      element.dataset.scrollReveal = "";
+      element.style.setProperty("--reveal-delay", `${Math.min(index, 3) * 65}ms`);
+    });
+  });
+
+  document.documentElement.classList.add("has-scroll-reveal");
+  const revealObserver = new IntersectionObserver((entries, observer) => {
+    entries.forEach((entry) => {
+      if (!entry.isIntersecting) return;
+      entry.target.classList.add("is-revealed");
+      observer.unobserve(entry.target);
+    });
+  }, { threshold: 0.08, rootMargin: "0px 0px -6% 0px" });
+
+  revealTargets.forEach((element) => revealObserver.observe(element));
+}
