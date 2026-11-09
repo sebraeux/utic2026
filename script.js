@@ -219,21 +219,96 @@ function bindScrollSyncedVideo(section, video, { smoothingMs = 115, maxSeekStep 
 function bindScrollTriggeredVideo(section, video) {
   if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
   let playRequested = false;
+  let reverseActive = false;
+  let lastScrollY = window.scrollY;
+  let reverseAnchorProgress = 0;
+  let reverseAnchorTime = 0;
+  let reverseTargetTime = 0;
+  let reverseFrame = 0;
+  let lastReverseSeek = 0;
+  const stickyLayer = section.querySelector(".hero-sticky");
 
-  const removeStartListeners = () => {
-    window.removeEventListener("scroll", startWhenVisible);
-    section.removeEventListener("touchstart", startWhenVisible);
-    section.removeEventListener("pointerdown", startWhenVisible);
+  const getProgress = () => {
+    const bounds = section.getBoundingClientRect();
+    const pinnedHeight = stickyLayer?.offsetHeight || document.documentElement.clientHeight;
+    const travel = Math.max(1, section.offsetHeight - pinnedHeight);
+    return Math.min(1, Math.max(0, -bounds.top / travel));
   };
 
   const startWhenVisible = () => {
     const bounds = section.getBoundingClientRect();
-    if (playRequested || bounds.bottom <= 0 || bounds.top >= document.documentElement.clientHeight) return;
+    if (reverseActive || video.ended || playRequested || bounds.bottom <= 0 || bounds.top >= document.documentElement.clientHeight) return;
     playRequested = true;
-    video.play().then(removeStartListeners).catch(() => { playRequested = false; });
+    video.play().catch(() => { playRequested = false; });
   };
 
-  window.addEventListener("scroll", startWhenVisible, { passive: true });
+  const applyReverseSeek = (now) => {
+    reverseFrame = 0;
+    if (!reverseActive || video.seeking) return;
+
+    const difference = reverseTargetTime - video.currentTime;
+    if (Math.abs(difference) < 0.025) {
+      if (Math.abs(difference) > 0.002) {
+        video.currentTime = reverseTargetTime;
+        lastReverseSeek = now;
+      }
+      if (reverseTargetTime <= 0.002) {
+        video.pause();
+        playRequested = false;
+      }
+      return;
+    }
+
+    if (now - lastReverseSeek < 72) {
+      reverseFrame = requestAnimationFrame(applyReverseSeek);
+      return;
+    }
+    video.currentTime = reverseTargetTime;
+    lastReverseSeek = now;
+  };
+
+  const scheduleReverseSeek = () => {
+    if (!reverseFrame) reverseFrame = requestAnimationFrame(applyReverseSeek);
+  };
+
+  const handleScroll = () => {
+    const currentScrollY = window.scrollY;
+    const direction = currentScrollY - lastScrollY;
+    lastScrollY = currentScrollY;
+
+    if (direction > 0.5) {
+      if (reverseActive) {
+        reverseActive = false;
+        reverseFrame = 0;
+      }
+      startWhenVisible();
+      return;
+    }
+
+    if (direction < -0.5) {
+      const progress = getProgress();
+      const bounds = section.getBoundingClientRect();
+      const canReverse = playRequested || video.ended || video.currentTime > 0.02 || reverseActive;
+      if (!canReverse || progress >= 0.999 || bounds.bottom <= 0) return;
+
+      if (!reverseActive) {
+        reverseActive = true;
+        video.pause();
+        playRequested = false;
+        reverseAnchorProgress = Math.max(progress, 0.001);
+        reverseAnchorTime = video.ended ? video.duration : video.currentTime;
+      }
+
+      reverseTargetTime = reverseAnchorTime * Math.min(1, progress / reverseAnchorProgress);
+      scheduleReverseSeek();
+    }
+  };
+
+  video.addEventListener("seeked", () => {
+    if (reverseActive && Math.abs(reverseTargetTime - video.currentTime) > 0.025) scheduleReverseSeek();
+  });
+  video.addEventListener("ended", () => { playRequested = false; });
+  window.addEventListener("scroll", handleScroll, { passive: true });
   section.addEventListener("touchstart", startWhenVisible, { passive: true });
   section.addEventListener("pointerdown", startWhenVisible, { passive: true });
 }
