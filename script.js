@@ -160,7 +160,7 @@ document.querySelectorAll(".desktop-nav a").forEach((link) => link.addEventListe
 }));
 
 // Keep scroll-linked videos paused and ease their playheads toward the scroll position.
-function bindScrollSyncedVideo(section, video, { smoothingMs = 115, maxSeekStep = 0.14, minSeekInterval = 32, directScrub = false } = {}) {
+function bindScrollSyncedVideo(section, video, { smoothingMs = 115, maxSeekStep = 0.14, minSeekInterval = 32 } = {}) {
   let targetTime = 0;
   let frame = 0;
   let previousFrameTime = 0;
@@ -191,21 +191,7 @@ function bindScrollSyncedVideo(section, video, { smoothingMs = 115, maxSeekStep 
     previousFrameTime = now;
     const difference = targetTime - video.currentTime;
     if (Math.abs(difference) < 0.025) {
-      if (Math.abs(difference) > 0.002 && (!directScrub || now - previousSeekTime >= minSeekInterval)) {
-        video.currentTime = targetTime;
-        previousSeekTime = now;
-      }
-      frame = 0;
-      return;
-    }
-
-    if (directScrub) {
-      if (now - previousSeekTime < minSeekInterval) {
-        frame = requestAnimationFrame(easePlayhead);
-        return;
-      }
-      video.currentTime = targetTime;
-      previousSeekTime = now;
+      if (Math.abs(difference) > 0.002) video.currentTime = targetTime;
       frame = 0;
       return;
     }
@@ -230,10 +216,33 @@ function bindScrollSyncedVideo(section, video, { smoothingMs = 115, maxSeekStep 
   updateTarget();
 }
 
+function bindScrollTriggeredVideo(section, video) {
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  let playRequested = false;
+
+  const removeStartListeners = () => {
+    window.removeEventListener("scroll", startWhenVisible);
+    section.removeEventListener("touchstart", startWhenVisible);
+    section.removeEventListener("pointerdown", startWhenVisible);
+  };
+
+  const startWhenVisible = () => {
+    const bounds = section.getBoundingClientRect();
+    if (playRequested || bounds.bottom <= 0 || bounds.top >= document.documentElement.clientHeight) return;
+    playRequested = true;
+    video.play().then(removeStartListeners).catch(() => { playRequested = false; });
+  };
+
+  window.addEventListener("scroll", startWhenVisible, { passive: true });
+  section.addEventListener("touchstart", startWhenVisible, { passive: true });
+  section.addEventListener("pointerdown", startWhenVisible, { passive: true });
+}
+
 const coarsePointer = window.matchMedia("(pointer: coarse)").matches;
-bindScrollSyncedVideo(document.querySelector(".hero"), document.querySelector(".hero-video"), coarsePointer
-  ? { directScrub: true, minSeekInterval: 80 }
-  : undefined);
+const hero = document.querySelector(".hero");
+const heroVideo = document.querySelector(".hero-video");
+if (coarsePointer) bindScrollTriggeredVideo(hero, heroVideo);
+else bindScrollSyncedVideo(hero, heroVideo);
 bindScrollSyncedVideo(document.querySelector(".journey"), document.querySelector(".journey-video"), {
   smoothingMs: 135,
   maxSeekStep: 0.12,
