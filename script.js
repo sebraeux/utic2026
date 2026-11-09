@@ -224,8 +224,7 @@ function bindScrollTriggeredVideo(section, video) {
   let reverseAnchorProgress = 0;
   let reverseAnchorTime = 0;
   let reverseTargetTime = 0;
-  let reverseFrame = 0;
-  let lastReverseSeek = 0;
+  let reverseTimer = 0;
   const stickyLayer = section.querySelector(".hero-sticky");
 
   const getProgress = () => {
@@ -242,33 +241,21 @@ function bindScrollTriggeredVideo(section, video) {
     video.play().catch(() => { playRequested = false; });
   };
 
-  const applyReverseSeek = (now) => {
-    reverseFrame = 0;
+  const applyReverseSeek = () => {
+    reverseTimer = 0;
     if (!reverseActive || video.seeking) return;
 
     const difference = reverseTargetTime - video.currentTime;
-    if (Math.abs(difference) < 0.025) {
-      if (Math.abs(difference) > 0.002) {
-        video.currentTime = reverseTargetTime;
-        lastReverseSeek = now;
-      }
-      if (reverseTargetTime <= 0.002) {
-        video.pause();
-        playRequested = false;
-      }
-      return;
+    if (Math.abs(difference) > 0.025) {
+      video.currentTime = reverseTargetTime;
+    } else if (reverseTargetTime <= 0.002) {
+      video.pause();
+      playRequested = false;
     }
-
-    if (now - lastReverseSeek < 72) {
-      reverseFrame = requestAnimationFrame(applyReverseSeek);
-      return;
-    }
-    video.currentTime = reverseTargetTime;
-    lastReverseSeek = now;
   };
 
   const scheduleReverseSeek = () => {
-    if (!reverseFrame) reverseFrame = requestAnimationFrame(applyReverseSeek);
+    if (!reverseTimer) reverseTimer = window.setTimeout(applyReverseSeek, 220);
   };
 
   const handleScroll = () => {
@@ -279,7 +266,8 @@ function bindScrollTriggeredVideo(section, video) {
     if (direction > 0.5) {
       if (reverseActive) {
         reverseActive = false;
-        reverseFrame = 0;
+        window.clearTimeout(reverseTimer);
+        reverseTimer = 0;
       }
       startWhenVisible();
       return;
@@ -305,7 +293,7 @@ function bindScrollTriggeredVideo(section, video) {
   };
 
   video.addEventListener("seeked", () => {
-    if (reverseActive && Math.abs(reverseTargetTime - video.currentTime) > 0.025) scheduleReverseSeek();
+    if (reverseActive) scheduleReverseSeek();
   });
   video.addEventListener("ended", () => { playRequested = false; });
   window.addEventListener("scroll", handleScroll, { passive: true });
