@@ -216,96 +216,162 @@ function bindScrollSyncedVideo(section, video, { smoothingMs = 115, maxSeekStep 
   updateTarget();
 }
 
-function bindScrollTriggeredVideo(section, video) {
-  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-  let playRequested = false;
-  let reverseActive = false;
-  let lastScrollY = window.scrollY;
-  let reverseAnchorProgress = 0;
-  let reverseAnchorTime = 0;
-  let reverseTargetTime = 0;
-  let reverseTimer = 0;
+function bindScrollFrameSequence(section, canvas, { frameCount = 60, cacheRadius = 5, maxConcurrent = 3 } = {}) {
+  const context = canvas.getContext("2d");
+  if (!context) return;
+
   const stickyLayer = section.querySelector(".hero-sticky");
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const saveData = navigator.connection?.saveData === true;
+  const loaded = new Map();
+  const pending = new Map();
+  const queue = [];
+  const queued = new Set();
+  let activeLoads = 0;
+  let targetFrame = 0;
+  let lastScrollY = window.scrollY;
+  let updateRequest = 0;
+  let lastDrawnFrame = -1;
+  let pixelWidth = 0;
+  let pixelHeight = 0;
 
-  const getProgress = () => {
-    const bounds = section.getBoundingClientRect();
-    const pinnedHeight = stickyLayer?.offsetHeight || document.documentElement.clientHeight;
-    const travel = Math.max(1, section.offsetHeight - pinnedHeight);
-    return Math.min(1, Math.max(0, -bounds.top / travel));
-  };
+  const clampFrame = (frame) => Math.min(frameCount - 1, Math.max(0, frame));
 
-  const startWhenVisible = () => {
-    const bounds = section.getBoundingClientRect();
-    if (reverseActive || video.ended || playRequested || bounds.bottom <= 0 || bounds.top >= document.documentElement.clientHeight) return;
-    playRequested = true;
-    video.play().catch(() => { playRequested = false; });
-  };
-
-  const applyReverseSeek = () => {
-    reverseTimer = 0;
-    if (!reverseActive || video.seeking) return;
-
-    const difference = reverseTargetTime - video.currentTime;
-    if (Math.abs(difference) > 0.025) {
-      video.currentTime = reverseTargetTime;
-    } else if (reverseTargetTime <= 0.002) {
-      video.pause();
-      playRequested = false;
+  const drawFrame = (frame, image) => {
+    const bounds = canvas.getBoundingClientRect();
+    const pixelRatio = Math.min(window.devicePixelRatio || 1, 1.5);
+    const width = Math.max(1, Math.round(bounds.width * pixelRatio));
+    const height = Math.max(1, Math.round(bounds.height * pixelRatio));
+    if (width !== pixelWidth || height !== pixelHeight) {
+      canvas.width = width;
+      canvas.height = height;
+      pixelWidth = width;
+      pixelHeight = height;
     }
+
+    const scale = Math.max(width / image.naturalWidth, height / image.naturalHeight);
+    const drawWidth = image.naturalWidth * scale;
+    const drawHeight = image.naturalHeight * scale;
+    const offsetX = (width - drawWidth) * 0.46;
+    const offsetY = (height - drawHeight) * 0.52;
+    context.clearRect(0, 0, width, height);
+    context.drawImage(image, offsetX, offsetY, drawWidth, drawHeight);
+    lastDrawnFrame = frame;
   };
 
-  const scheduleReverseSeek = () => {
-    if (!reverseTimer) reverseTimer = window.setTimeout(applyReverseSeek, 220);
-  };
-
-  const handleScroll = () => {
-    const currentScrollY = window.scrollY;
-    const direction = currentScrollY - lastScrollY;
-    lastScrollY = currentScrollY;
-
-    if (direction > 0.5) {
-      if (reverseActive) {
-        reverseActive = false;
-        window.clearTimeout(reverseTimer);
-        reverseTimer = 0;
-      }
-      startWhenVisible();
+  const drawNearestLoaded = () => {
+    if (loaded.has(targetFrame)) {
+      drawFrame(targetFrame, loaded.get(targetFrame));
       return;
     }
-
-    if (direction < -0.5) {
-      const progress = getProgress();
-      const bounds = section.getBoundingClientRect();
-      const canReverse = playRequested || video.ended || video.currentTime > 0.02 || reverseActive;
-      if (!canReverse || progress >= 0.999 || bounds.bottom <= 0) return;
-
-      if (!reverseActive) {
-        reverseActive = true;
-        video.pause();
-        playRequested = false;
-        reverseAnchorProgress = Math.max(progress, 0.001);
-        reverseAnchorTime = video.ended ? video.duration : video.currentTime;
+    for (let distance = 1; distance < frameCount; distance += 1) {
+      const before = targetFrame - distance;
+      const after = targetFrame + distance;
+      if (before >= 0 && loaded.has(before)) {
+        drawFrame(before, loaded.get(before));
+        return;
       }
-
-      reverseTargetTime = reverseAnchorTime * Math.min(1, progress / reverseAnchorProgress);
-      scheduleReverseSeek();
+      if (after < frameCount && loaded.has(after)) {
+        drawFrame(after, loaded.get(after));
+        return;
+      }
     }
   };
 
-  video.addEventListener("seeked", () => {
-    if (reverseActive) scheduleReverseSeek();
-  });
-  video.addEventListener("ended", () => { playRequested = false; });
-  window.addEventListener("scroll", handleScroll, { passive: true });
-  section.addEventListener("touchstart", startWhenVisible, { passive: true });
-  section.addEventListener("pointerdown", startWhenVisible, { passive: true });
+  const trimCache = () => {
+    loaded.forEach((image, frame) => {
+      if (Math.abs(frame - targetFrame) <= cacheRadius || frame === 0) return;
+      loaded.delete(frame);
+    });
+  };
+
+  const pumpQueue = () => {
+    while (activeLoads < maxConcurrent && queue.length) {
+      const frame = queue.shift();
+      queued.delete(frame);
+      if (loaded.has(frame) || pending.has(frame)) continue;
+
+      const image = new Image();
+      image.decoding = "async";
+      pending.set(frame, image);
+      activeLoads += 1;
+      image.onload = () => {
+        pending.delete(frame);
+        activeLoads -= 1;
+        loaded.set(frame, image);
+        trimCache();
+        if (lastDrawnFrame < 0 || frame === targetFrame) drawNearestLoaded();
+        pumpQueue();
+      };
+      image.onerror = () => {
+        pending.delete(frame);
+        activeLoads -= 1;
+        pumpQueue();
+      };
+      image.src = `img/hero-frames/frame-${String(frame).padStart(3, "0")}.jpg`;
+    }
+  };
+
+  const requestFrame = (frame, priority = false) => {
+    if (frame < 0 || frame >= frameCount || loaded.has(frame) || pending.has(frame)) return;
+    if (queued.has(frame)) {
+      if (priority) {
+        queue.splice(queue.indexOf(frame), 1);
+        queue.unshift(frame);
+      }
+      return;
+    }
+    queued.add(frame);
+    if (priority) queue.unshift(frame);
+    else queue.push(frame);
+    pumpQueue();
+  };
+
+  const preloadNeighborhood = (direction) => {
+    requestFrame(targetFrame, true);
+    for (let distance = 1; distance <= 4; distance += 1) {
+      requestFrame(targetFrame + direction * distance, true);
+    }
+    for (let distance = 1; distance <= 2; distance += 1) {
+      requestFrame(targetFrame - direction * distance, true);
+    }
+  };
+
+  const updateTarget = () => {
+    updateRequest = 0;
+    const scrollY = window.scrollY;
+    const direction = scrollY >= lastScrollY ? 1 : -1;
+    lastScrollY = scrollY;
+    if (!reducedMotion) {
+      const bounds = section.getBoundingClientRect();
+      const pinnedHeight = stickyLayer?.offsetHeight || window.innerHeight;
+      const travel = Math.max(1, section.offsetHeight - pinnedHeight);
+      const progress = Math.min(1, Math.max(0, -bounds.top / travel));
+      targetFrame = clampFrame(Math.round(progress * (frameCount - 1)));
+    }
+
+    drawNearestLoaded();
+    trimCache();
+    if (!reducedMotion) preloadNeighborhood(direction);
+  };
+
+  const scheduleUpdate = () => {
+    if (!updateRequest) updateRequest = requestAnimationFrame(updateTarget);
+  };
+
+  window.addEventListener("scroll", scheduleUpdate, { passive: true });
+  window.addEventListener("resize", scheduleUpdate, { passive: true });
+  if (window.visualViewport) window.visualViewport.addEventListener("resize", scheduleUpdate, { passive: true });
+  scheduleUpdate();
+
+  const initialFrames = reducedMotion ? 1 : 8;
+  for (let frame = 0; frame < initialFrames; frame += 1) requestFrame(frame);
+  if (!reducedMotion && !saveData) {
+    for (let frame = initialFrames; frame < frameCount; frame += 1) requestFrame(frame);
+  }
 }
 
-const coarsePointer = window.matchMedia("(pointer: coarse)").matches;
-const hero = document.querySelector(".hero");
-const heroVideo = document.querySelector(".hero-video");
-if (coarsePointer) bindScrollTriggeredVideo(hero, heroVideo);
-else bindScrollSyncedVideo(hero, heroVideo);
+bindScrollFrameSequence(document.querySelector(".hero"), document.querySelector(".hero-canvas"));
 bindScrollSyncedVideo(document.querySelector(".journey"), document.querySelector(".journey-video"), {
   smoothingMs: 135,
   maxSeekStep: 0.12,
