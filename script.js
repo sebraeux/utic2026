@@ -304,29 +304,8 @@ function bindScrollTriggeredVideo(section, video) {
 const coarsePointer = window.matchMedia("(pointer: coarse)").matches;
 const hero = document.querySelector(".hero");
 const heroVideo = document.querySelector(".hero-video");
-let heroScrollyVideo = null;
-if (window.ScrollyVideo && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-  try {
-    heroScrollyVideo = new window.ScrollyVideo({
-      scrollyVideoContainer: hero.querySelector(".hero-sticky"),
-      src: new URL("videos/engine-team.mp4", document.baseURI).href,
-      transitionSpeed: 8,
-      frameThreshold: 0.016,
-      cover: true,
-      sticky: true,
-      full: true,
-      trackScroll: true,
-      useWebCodecs: true,
-    });
-    hero.classList.add("is-scrolly-video");
-  } catch (error) {
-    console.warn("ScrollyVideo não pôde iniciar; usando o vídeo de fallback.", error);
-  }
-}
-if (!heroScrollyVideo) {
-  if (coarsePointer) bindScrollTriggeredVideo(hero, heroVideo);
-  else bindScrollSyncedVideo(hero, heroVideo);
-}
+if (coarsePointer) bindScrollTriggeredVideo(hero, heroVideo);
+else bindScrollSyncedVideo(hero, heroVideo);
 bindScrollSyncedVideo(document.querySelector(".journey"), document.querySelector(".journey-video"), {
   smoothingMs: 135,
   maxSeekStep: 0.12,
