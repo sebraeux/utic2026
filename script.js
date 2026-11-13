@@ -159,68 +159,19 @@ document.querySelectorAll(".desktop-nav a").forEach((link) => link.addEventListe
   document.body.classList.remove("menu-open");
 }));
 
-// Keep scroll-linked videos paused and ease their playheads toward the scroll position.
-function bindScrollSyncedVideo(section, video, { smoothingMs = 115, maxSeekStep = 0.14, minSeekInterval = 32 } = {}) {
-  let targetTime = 0;
-  let frame = 0;
-  let previousFrameTime = 0;
-  let previousSeekTime = 0;
-  const stickyLayer = section.querySelector(".hero-sticky, .journey-video-stage");
-
-  const updateTarget = () => {
-    const bounds = section.getBoundingClientRect();
-    const pinnedHeight = stickyLayer?.offsetHeight || document.documentElement.clientHeight;
-    const travel = Math.max(1, section.offsetHeight - pinnedHeight);
-    const progress = Math.min(1, Math.max(0, -bounds.top / travel));
-    if (!Number.isFinite(video.duration) || video.duration === 0) return;
-    targetTime = progress * Math.max(0, video.duration - 0.08);
-    if (!frame) frame = requestAnimationFrame(easePlayhead);
-  };
-
-  const easePlayhead = (now) => {
-    if (!Number.isFinite(video.duration) || video.duration === 0) {
-      frame = 0;
-      return;
-    }
-    if (video.seeking) {
-      frame = 0;
-      return;
-    }
-
-    const elapsed = previousFrameTime ? Math.min(48, now - previousFrameTime) : 16;
-    previousFrameTime = now;
-    const difference = targetTime - video.currentTime;
-    if (Math.abs(difference) < 0.025) {
-      if (Math.abs(difference) > 0.002) video.currentTime = targetTime;
-      frame = 0;
-      return;
-    }
-
-    if (now - previousSeekTime >= minSeekInterval) {
-      const smoothing = 1 - Math.exp(-elapsed / smoothingMs);
-      const easedStep = Math.max(-maxSeekStep, Math.min(maxSeekStep, difference * smoothing));
-      video.currentTime += easedStep;
-      previousSeekTime = now;
-    }
-    frame = requestAnimationFrame(easePlayhead);
-  };
-
-  video.addEventListener("loadedmetadata", updateTarget);
-  video.addEventListener("seeked", () => {
-    if (!frame && Math.abs(targetTime - video.currentTime) > 0.025) frame = requestAnimationFrame(easePlayhead);
-  });
-  window.addEventListener("scroll", updateTarget, { passive: true });
-  window.addEventListener("resize", updateTarget);
-  window.visualViewport?.addEventListener("resize", updateTarget, { passive: true });
-  video.pause();
-  updateTarget();
-}
-
-function bindScrollFrameSequence(section, canvas, { frameCount = 60, smoothingMs = 140, maxConcurrent = 4 } = {}) {
+function bindScrollFrameSequence(section, canvas, {
+  frameCount = 60,
+  smoothingMs = 140,
+  maxConcurrent = 4,
+  frameUrl = (frame) => `img/hero-frames/frame-${String(frame).padStart(3, "0")}.jpg`,
+  stickySelector = ".hero-sticky, .journey-video-stage",
+  getPosition = (isMobile) => ({ x: isMobile ? 0.46 : 0.42, y: 0.52 }),
+} = {}) {
+  if (!section || !canvas) return;
   const context = canvas.getContext("2d");
   if (!context) return;
 
-  const stickyLayer = section.querySelector(".hero-sticky");
+  const stickyLayer = section.querySelector(stickySelector);
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const frames = new Array(frameCount);
   const coverRects = new Array(frameCount);
@@ -239,7 +190,7 @@ function bindScrollFrameSequence(section, canvas, { frameCount = 60, smoothingMs
   let inView = false;
   let animationRequest = 0;
   let previousTimestamp = 0;
-  let objectPositionX = mobileQuery.matches ? 0.46 : 0.42;
+  let currentPosition = getPosition(mobileQuery.matches);
 
   const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
@@ -255,7 +206,7 @@ function bindScrollFrameSequence(section, canvas, { frameCount = 60, smoothingMs
     pixelHeight = nextHeight;
     canvas.width = pixelWidth;
     canvas.height = pixelHeight;
-    objectPositionX = mobileQuery.matches ? 0.46 : 0.42;
+    currentPosition = getPosition(mobileQuery.matches);
     frames.forEach((bitmap, index) => {
       if (bitmap) coverRects[index] = getCoverRect(bitmap);
     });
@@ -266,7 +217,9 @@ function bindScrollFrameSequence(section, canvas, { frameCount = 60, smoothingMs
     const scale = Math.max(pixelWidth / bitmap.width, pixelHeight / bitmap.height);
     const width = bitmap.width * scale;
     const height = bitmap.height * scale;
-    return { x: (pixelWidth - width) * objectPositionX, y: (pixelHeight - height) * 0.52, width, height };
+    const posX = currentPosition.x ?? 0.5;
+    const posY = currentPosition.y ?? 0.5;
+    return { x: (pixelWidth - width) * posX, y: (pixelHeight - height) * posY, width, height };
   };
 
   const drawBitmap = (bitmap, rect, opacity) => {
@@ -317,9 +270,9 @@ function bindScrollFrameSequence(section, canvas, { frameCount = 60, smoothingMs
 
       activeLoads += 1;
       pending.add(frame);
-      fetch(`img/hero-frames/frame-${String(frame).padStart(3, "0")}.jpg`)
+      fetch(frameUrl(frame))
         .then((response) => {
-          if (!response.ok) throw new Error(`Could not load hero frame ${frame}`);
+          if (!response.ok) throw new Error(`Could not load frame ${frame}`);
           return response.blob();
         })
         .then((blob) => createImageBitmap(blob))
@@ -401,18 +354,34 @@ function bindScrollFrameSequence(section, canvas, { frameCount = 60, smoothingMs
 
   window.addEventListener("scroll", setTargetFromScroll, { passive: true });
   window.addEventListener("resize", measureLayout, { passive: true });
-  mobileQuery.addEventListener?.("change", measureLayout);
-  if ("ResizeObserver" in window && stickyLayer) {
+  mobileQuery.addEventListener?.("change", () => {
+    currentPosition = getPosition(mobileQuery.matches);
+    measureLayout();
+  });
+  if ("ResizeObserver" in window) {
     const resizeObserver = new ResizeObserver(measureLayout);
-    resizeObserver.observe(stickyLayer);
+    if (stickyLayer) resizeObserver.observe(stickyLayer);
+    resizeObserver.observe(section);
   }
   measureLayout();
 }
 
-bindScrollFrameSequence(document.querySelector(".hero"), document.querySelector(".hero-canvas"));
-bindScrollSyncedVideo(document.querySelector(".journey"), document.querySelector(".journey-video"), {
-  smoothingMs: 135,
-  maxSeekStep: 0.12,
+bindScrollFrameSequence(document.querySelector(".hero"), document.querySelector(".hero-canvas"), {
+  frameCount: 60,
+  smoothingMs: 140,
+  maxConcurrent: 4,
+  frameUrl: (frame) => `img/hero-frames/frame-${String(frame).padStart(3, "0")}.jpg`,
+  stickySelector: ".hero-sticky",
+  getPosition: (isMobile) => ({ x: isMobile ? 0.46 : 0.42, y: 0.52 }),
+});
+
+bindScrollFrameSequence(document.querySelector(".journey"), document.querySelector(".journey-canvas"), {
+  frameCount: 60,
+  smoothingMs: 140,
+  maxConcurrent: 4,
+  frameUrl: (frame) => `img/journey-frames/frame-${String(frame).padStart(3, "0")}.jpg`,
+  stickySelector: ".journey-video-stage",
+  getPosition: () => ({ x: 0.5, y: 0.5 }),
 });
 
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
