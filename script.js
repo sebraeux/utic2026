@@ -366,7 +366,7 @@ function bindScrollFrameSequence(section, canvas, {
   measureLayout();
 }
 
-bindScrollFrameSequence(document.querySelector(".hero"), document.querySelector(".hero-canvas"), {
+bindScrollFrameSequence(document.querySelector(".hero-overview-group"), document.querySelector(".hero-canvas"), {
   frameCount: 60,
   smoothingMs: 140,
   maxConcurrent: 4,
@@ -385,11 +385,6 @@ bindScrollFrameSequence(document.querySelector(".journey"), document.querySelect
 });
 
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
-const overviewVideo = document.querySelector(".overview-video");
-const slowOverviewVideo = () => { overviewVideo.playbackRate = 0.48; };
-overviewVideo.addEventListener("loadedmetadata", slowOverviewVideo);
-if (overviewVideo.readyState >= 1) slowOverviewVideo();
-if (reducedMotion.matches) overviewVideo.pause();
 
 // Alternate two copies so the future section can dissolve softly between loops.
 const futureVideos = [...document.querySelectorAll(".future-video")];
