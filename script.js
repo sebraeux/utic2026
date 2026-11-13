@@ -216,159 +216,197 @@ function bindScrollSyncedVideo(section, video, { smoothingMs = 115, maxSeekStep 
   updateTarget();
 }
 
-function bindScrollFrameSequence(section, canvas, { frameCount = 60, cacheRadius = 5, maxConcurrent = 3 } = {}) {
+function bindScrollFrameSequence(section, canvas, { frameCount = 60, smoothingMs = 140, maxConcurrent = 4 } = {}) {
   const context = canvas.getContext("2d");
   if (!context) return;
 
   const stickyLayer = section.querySelector(".hero-sticky");
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const saveData = navigator.connection?.saveData === true;
-  const loaded = new Map();
-  const pending = new Map();
+  const frames = new Array(frameCount);
+  const coverRects = new Array(frameCount);
+  const pending = new Set();
   const queue = [];
   const queued = new Set();
+  const mobileQuery = window.matchMedia("(max-width: 640px)");
   let activeLoads = 0;
   let targetFrame = 0;
-  let lastScrollY = window.scrollY;
-  let updateRequest = 0;
-  let lastDrawnFrame = -1;
+  let currentFrame = 0;
+  let lastRenderedFrame = 0;
+  let sectionStart = 0;
+  let scrollRange = 1;
   let pixelWidth = 0;
   let pixelHeight = 0;
+  let inView = false;
+  let animationRequest = 0;
+  let previousTimestamp = 0;
+  let objectPositionX = mobileQuery.matches ? 0.46 : 0.42;
 
-  const clampFrame = (frame) => Math.min(frameCount - 1, Math.max(0, frame));
+  const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
-  const drawFrame = (frame, image) => {
-    const bounds = canvas.getBoundingClientRect();
+  const resizeCanvas = () => {
+    const width = canvas.clientWidth;
+    const height = canvas.clientHeight;
     const pixelRatio = Math.min(window.devicePixelRatio || 1, 1.5);
-    const width = Math.max(1, Math.round(bounds.width * pixelRatio));
-    const height = Math.max(1, Math.round(bounds.height * pixelRatio));
-    if (width !== pixelWidth || height !== pixelHeight) {
-      canvas.width = width;
-      canvas.height = height;
-      pixelWidth = width;
-      pixelHeight = height;
-    }
+    const nextWidth = Math.max(1, Math.round(width * pixelRatio));
+    const nextHeight = Math.max(1, Math.round(height * pixelRatio));
+    if (nextWidth === pixelWidth && nextHeight === pixelHeight) return;
 
-    const scale = Math.max(width / image.naturalWidth, height / image.naturalHeight);
-    const drawWidth = image.naturalWidth * scale;
-    const drawHeight = image.naturalHeight * scale;
-    const offsetX = (width - drawWidth) * 0.46;
-    const offsetY = (height - drawHeight) * 0.52;
-    context.clearRect(0, 0, width, height);
-    context.drawImage(image, offsetX, offsetY, drawWidth, drawHeight);
-    lastDrawnFrame = frame;
-  };
-
-  const drawNearestLoaded = () => {
-    if (loaded.has(targetFrame)) {
-      drawFrame(targetFrame, loaded.get(targetFrame));
-      return;
-    }
-    for (let distance = 1; distance < frameCount; distance += 1) {
-      const before = targetFrame - distance;
-      const after = targetFrame + distance;
-      if (before >= 0 && loaded.has(before)) {
-        drawFrame(before, loaded.get(before));
-        return;
-      }
-      if (after < frameCount && loaded.has(after)) {
-        drawFrame(after, loaded.get(after));
-        return;
-      }
-    }
-  };
-
-  const trimCache = () => {
-    loaded.forEach((image, frame) => {
-      if (Math.abs(frame - targetFrame) <= cacheRadius || frame === 0) return;
-      loaded.delete(frame);
+    pixelWidth = nextWidth;
+    pixelHeight = nextHeight;
+    canvas.width = pixelWidth;
+    canvas.height = pixelHeight;
+    objectPositionX = mobileQuery.matches ? 0.46 : 0.42;
+    frames.forEach((bitmap, index) => {
+      if (bitmap) coverRects[index] = getCoverRect(bitmap);
     });
+    renderFrame(currentFrame);
+  };
+
+  const getCoverRect = (bitmap) => {
+    const scale = Math.max(pixelWidth / bitmap.width, pixelHeight / bitmap.height);
+    const width = bitmap.width * scale;
+    const height = bitmap.height * scale;
+    return { x: (pixelWidth - width) * objectPositionX, y: (pixelHeight - height) * 0.52, width, height };
+  };
+
+  const drawBitmap = (bitmap, rect, opacity) => {
+    if (!bitmap || !rect || opacity <= 0) return;
+    context.globalAlpha = opacity;
+    context.drawImage(bitmap, rect.x, rect.y, rect.width, rect.height);
+  };
+
+  function renderFrame(position) {
+    if (!pixelWidth || !pixelHeight) return;
+    const lowerFrame = Math.floor(position);
+    const upperFrame = Math.min(frameCount - 1, lowerFrame + 1);
+    const mix = position - lowerFrame;
+    const lowerBitmap = frames[lowerFrame];
+    const upperBitmap = frames[upperFrame];
+
+    context.globalAlpha = 1;
+    context.clearRect(0, 0, pixelWidth, pixelHeight);
+    if (lowerBitmap && upperBitmap && lowerFrame !== upperFrame) {
+      drawBitmap(lowerBitmap, coverRects[lowerFrame], 1);
+      drawBitmap(upperBitmap, coverRects[upperFrame], mix);
+      lastRenderedFrame = upperFrame;
+    } else if (lowerBitmap || upperBitmap) {
+      const fallbackFrame = lowerBitmap ? lowerFrame : upperFrame;
+      const fallbackBitmap = lowerBitmap || upperBitmap;
+      drawBitmap(fallbackBitmap, coverRects[fallbackFrame], 1);
+      lastRenderedFrame = fallbackFrame;
+    } else if (frames[lastRenderedFrame]) {
+      drawBitmap(frames[lastRenderedFrame], coverRects[lastRenderedFrame], 1);
+    }
+    context.globalAlpha = 1;
+  }
+
+  const setTargetFromScroll = () => {
+    if (!inView || reducedMotion) return;
+    const progress = clamp((window.scrollY - sectionStart) / scrollRange, 0, 1);
+    targetFrame = progress * (frameCount - 1);
+    queue.sort((left, right) => Math.abs(left - targetFrame) - Math.abs(right - targetFrame));
+    pumpQueue();
+    if (!animationRequest) animationRequest = requestAnimationFrame(animateFrame);
   };
 
   const pumpQueue = () => {
     while (activeLoads < maxConcurrent && queue.length) {
       const frame = queue.shift();
       queued.delete(frame);
-      if (loaded.has(frame) || pending.has(frame)) continue;
+      if (frames[frame] || pending.has(frame)) continue;
 
-      const image = new Image();
-      image.decoding = "async";
-      pending.set(frame, image);
       activeLoads += 1;
-      image.onload = () => {
-        pending.delete(frame);
-        activeLoads -= 1;
-        loaded.set(frame, image);
-        trimCache();
-        if (lastDrawnFrame < 0 || frame === targetFrame) drawNearestLoaded();
-        pumpQueue();
-      };
-      image.onerror = () => {
-        pending.delete(frame);
-        activeLoads -= 1;
-        pumpQueue();
-      };
-      image.src = `img/hero-frames/frame-${String(frame).padStart(3, "0")}.jpg`;
+      pending.add(frame);
+      fetch(`img/hero-frames/frame-${String(frame).padStart(3, "0")}.jpg`)
+        .then((response) => {
+          if (!response.ok) throw new Error(`Could not load hero frame ${frame}`);
+          return response.blob();
+        })
+        .then((blob) => createImageBitmap(blob))
+        .then((bitmap) => {
+          frames[frame] = bitmap;
+          coverRects[frame] = getCoverRect(bitmap);
+          if (frame === 0 && !reducedMotion) setTargetFromScroll();
+          else renderFrame(currentFrame);
+        })
+        .catch((error) => console.warn(error))
+        .finally(() => {
+          pending.delete(frame);
+          activeLoads -= 1;
+          pumpQueue();
+        });
     }
   };
 
-  const requestFrame = (frame, priority = false) => {
-    if (frame < 0 || frame >= frameCount || loaded.has(frame) || pending.has(frame)) return;
-    if (queued.has(frame)) {
-      if (priority) {
-        queue.splice(queue.indexOf(frame), 1);
-        queue.unshift(frame);
-      }
-      return;
+  const requestFrame = (frame) => {
+    const index = Math.round(frame);
+    if (index < 0 || index >= frameCount || frames[index] || pending.has(index) || queued.has(index)) return;
+    queued.add(index);
+    queue.push(index);
+  };
+
+  const prioritizeAroundTarget = () => {
+    const center = Math.round(targetFrame);
+    for (let distance = 0; distance <= 5; distance += 1) {
+      requestFrame(center + distance);
+      if (distance) requestFrame(center - distance);
     }
-    queued.add(frame);
-    if (priority) queue.unshift(frame);
-    else queue.push(frame);
+    queue.sort((left, right) => Math.abs(left - targetFrame) - Math.abs(right - targetFrame));
     pumpQueue();
   };
 
-  const preloadNeighborhood = (direction) => {
-    requestFrame(targetFrame, true);
-    for (let distance = 1; distance <= 4; distance += 1) {
-      requestFrame(targetFrame + direction * distance, true);
-    }
-    for (let distance = 1; distance <= 2; distance += 1) {
-      requestFrame(targetFrame - direction * distance, true);
-    }
+  const measureLayout = () => {
+    sectionStart = section.getBoundingClientRect().top + window.scrollY;
+    scrollRange = Math.max(1, section.offsetHeight - (stickyLayer?.offsetHeight || canvas.clientHeight));
+    resizeCanvas();
+    setTargetFromScroll();
   };
 
-  const updateTarget = () => {
-    updateRequest = 0;
-    const scrollY = window.scrollY;
-    const direction = scrollY >= lastScrollY ? 1 : -1;
-    lastScrollY = scrollY;
-    if (!reducedMotion) {
-      const bounds = section.getBoundingClientRect();
-      const pinnedHeight = stickyLayer?.offsetHeight || window.innerHeight;
-      const travel = Math.max(1, section.offsetHeight - pinnedHeight);
-      const progress = Math.min(1, Math.max(0, -bounds.top / travel));
-      targetFrame = clampFrame(Math.round(progress * (frameCount - 1)));
+  function animateFrame(timestamp) {
+    if (!inView) {
+      animationRequest = 0;
+      previousTimestamp = 0;
+      return;
     }
 
-    drawNearestLoaded();
-    trimCache();
-    if (!reducedMotion) preloadNeighborhood(direction);
-  };
+    const elapsed = previousTimestamp ? Math.min(48, timestamp - previousTimestamp) : 16;
+    previousTimestamp = timestamp;
+    const difference = targetFrame - currentFrame;
+    currentFrame += difference * (1 - Math.exp(-elapsed / smoothingMs));
+    if (Math.abs(difference) < 0.01) currentFrame = targetFrame;
+    renderFrame(currentFrame);
 
-  const scheduleUpdate = () => {
-    if (!updateRequest) updateRequest = requestAnimationFrame(updateTarget);
-  };
-
-  window.addEventListener("scroll", scheduleUpdate, { passive: true });
-  window.addEventListener("resize", scheduleUpdate, { passive: true });
-  if (window.visualViewport) window.visualViewport.addEventListener("resize", scheduleUpdate, { passive: true });
-  scheduleUpdate();
-
-  const initialFrames = reducedMotion ? 1 : 8;
-  for (let frame = 0; frame < initialFrames; frame += 1) requestFrame(frame);
-  if (!reducedMotion && !saveData) {
-    for (let frame = initialFrames; frame < frameCount; frame += 1) requestFrame(frame);
+    if (Math.abs(targetFrame - currentFrame) > 0.01) {
+      animationRequest = requestAnimationFrame(animateFrame);
+    } else {
+      animationRequest = 0;
+      previousTimestamp = 0;
+    }
   }
+
+  const frameLimit = reducedMotion ? 1 : frameCount;
+  for (let frame = 0; frame < frameLimit; frame += 1) requestFrame(frame);
+  const observer = new IntersectionObserver((entries) => {
+    inView = entries[0].isIntersecting;
+    if (inView) {
+      setTargetFromScroll();
+      if (!reducedMotion) prioritizeAroundTarget();
+    } else if (animationRequest) {
+      cancelAnimationFrame(animationRequest);
+      animationRequest = 0;
+      previousTimestamp = 0;
+    }
+  }, { threshold: 0.01 });
+  observer.observe(section);
+
+  window.addEventListener("scroll", setTargetFromScroll, { passive: true });
+  window.addEventListener("resize", measureLayout, { passive: true });
+  mobileQuery.addEventListener?.("change", measureLayout);
+  if ("ResizeObserver" in window && stickyLayer) {
+    const resizeObserver = new ResizeObserver(measureLayout);
+    resizeObserver.observe(stickyLayer);
+  }
+  measureLayout();
 }
 
 bindScrollFrameSequence(document.querySelector(".hero"), document.querySelector(".hero-canvas"));
